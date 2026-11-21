@@ -88,6 +88,15 @@ python3 -m unittest discover -v
 
 ---
 
+## CI/CD Pipeline (`dev` → `main` → Production)
+
+This repository uses GitHub Actions ([`.github/workflows/ci-cd.yml`](.github/workflows/ci-cd.yml)) for continuous integration and automated promotion to production:
+
+1. **Push to `dev`**: Every push to `dev` triggers the `test-and-verify` job, which compiles all Python modules, runs the `unittest` suite (`test_scrubber.py`), and executes an end-to-end 4-stage pipeline smoke test across all 3 healthcare SOC log scenarios (SSH Brute-Force + HCN, EHR Bulk Export + Ontario HCN/CGNAT, and Sysmon Prompt-Injection Quarantine).
+2. **Automated Promotion to `main` (Production)**: Only if `test-and-verify` passes 100%, the `promote-to-main` job automatically merges the verified `dev` commit into `main` and pushes to `origin/main`, triggering Vercel's production deployment.
+
+---
+
 ## Security Design & Honest Limitations
 
 - **Ephemeral Deterministic Session Tokens**: Within a single request invocation, identical identifiers map to the same token (e.g., `[EMAIL_1]`) so the LLM can correlate multi-line events without seeing raw values. Because the bidirectional mapping exists in memory during request execution, it is an **ephemeral per-request pseudonymization store**, not cryptographic zero-knowledge proof. The vault is never logged to disk and is explicitly cleared (`token_vault.clear()`) before the HTTP response finishes.

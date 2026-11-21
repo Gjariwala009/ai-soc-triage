@@ -621,10 +621,10 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             </div>
           </div>
 
-          <textarea id="logInput" maxlength="12000" oninput="updateCharCount()" placeholder="Paste any syslog, Windows Event / Sysmon entry, or healthcare audit log line here...">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 port 54321 ssh2 -> internal跳 10.0.0.15 / 192.168.1.10</textarea>
+          <textarea id="logInput" maxlength="12000" oninput="updateCharCount()" placeholder="Paste any syslog, Windows Event / Sysmon entry, or healthcare audit log line here...">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 port 54321 ssh2 -> internal 10.0.0.15 / 192.168.1.10</textarea>
           <div class="char-meta">
             <span>Ephemeral session tokens: <code>[EMAIL_n]</code>, <code>[HCN_n]</code>, <code>[INTERNAL_IP_n]</code></span>
-            <span id="charCount">191 / 12,000 chars</span>
+            <span id="charCount">190 / 12,000 chars</span>
           </div>
           <div id="errorBox" class="err hidden"></div>
         </div>
@@ -635,13 +635,13 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             <span id="scrubTags" class="chip chip-low">Tokens: 4 | Clean</span>
           </div>
           <div class="field-label">Sanitized Telemetry (PII/PHI &amp; Private IPs Masked)</div>
-          <div id="scrubbedLog" class="mono">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal跳 [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
+          <div id="scrubbedLog" class="mono">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
           <div id="quarantineBox" class="quarantine-box hidden"></div>
           <div class="field-label">Exact Prompt Dispatched to AI (Raw Identifiers Replaced by Session Tokens)</div>
           <div id="promptSentBox" class="mono">You are a Tier-1 Healthcare SOC Analyst. Analyze the scrubbed security log and the live threat intelligence data below. Preserve privacy tokens like [EMAIL_1], [HCN_1], or [INTERNAL_IP_1] verbatim in your summary and recommended_action.
 
 Log:
-Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal跳 [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
+Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
         </div>
       </div>
 
