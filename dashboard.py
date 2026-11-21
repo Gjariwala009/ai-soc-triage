@@ -621,7 +621,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             </div>
           </div>
 
-          <textarea id="logInput" maxlength="12000" oninput="updateCharCount()" placeholder="Paste any syslog, Windows Event / Sysmon entry, or healthcare audit log line here...">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 port 54321 ssh2 -> internal 10.0.0.15 / 192.168.1.10</textarea>
+          <textarea id="logInput" maxlength="12000" oninput="updateCharCount()" placeholder="Paste any syslog, Windows Event / Sysmon entry, or healthcare audit log line here, or click a 1-Click Sample Preset above...">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 port 54321 ssh2 -> internal 10.0.0.15 / 192.168.1.10</textarea>
           <div class="char-meta">
             <span>Ephemeral session tokens: <code>[EMAIL_n]</code>, <code>[HCN_n]</code>, <code>[INTERNAL_IP_n]</code></span>
             <span id="charCount">190 / 12,000 chars</span>
@@ -629,50 +629,46 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
           <div id="errorBox" class="err hidden"></div>
         </div>
 
-        <div id="scrubBox" class="card">
+        <div id="scrubBox" class="card hidden">
           <div class="card-head">
             <span class="card-title">Sanitized Log &amp; Outbound LLM Prompt</span>
-            <span id="scrubTags" class="chip">SAMPLE PREVIEW (NOT YET RUN)</span>
+            <span id="scrubTags" class="chip"></span>
           </div>
           <div class="field-label">Sanitized Telemetry (PII/PHI &amp; Private IPs Masked)</div>
-          <div id="scrubbedLog" class="mono">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
+          <div id="scrubbedLog" class="mono"></div>
           <div id="quarantineBox" class="quarantine-box hidden"></div>
           <div class="field-label">Exact Prompt Dispatched to AI (Raw Identifiers Replaced by Session Tokens)</div>
-          <div id="promptSentBox" class="mono">You are a Tier-1 Healthcare SOC Analyst. Analyze the scrubbed security log and the live threat intelligence data below. Preserve privacy tokens like [EMAIL_1], [HCN_1], or [INTERNAL_IP_1] verbatim in your summary and recommended_action.
-
-Log:
-Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
+          <div id="promptSentBox" class="mono"></div>
         </div>
       </div>
 
-      <div id="rightCol" class="col">
+      <div id="idleCol" class="col">
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">Awaiting Live Triage Execution</span>
+            <span class="chip">IDLE — READY</span>
+          </div>
+          <div class="mono" style="color:var(--muted);line-height:1.6">Click <strong>Run Triage Analysis</strong> (or any of the three <strong>1-Click Sample Presets</strong> on the left) to run the live 4-stage pipeline:
+1. Local PII/PHI &amp; internal subnet tokenization (<code>[EMAIL_1]</code>, <code>[HCN_1]</code>, <code>[INTERNAL_IP_1]</code>) + prompt-injection quarantine.
+2. Live public IP reputation lookup via <code>AbuseIPDB</code> + <code>ip-api.com</code>.
+3. Structured MITRE ATT&amp;CK triage via <code>gemini-3-flash-preview</code>.
+4. Single-invocation local detokenization &amp; token vault wipe.</div>
+        </div>
+      </div>
+
+      <div id="rightCol" class="col hidden">
         <div class="card">
           <div class="card-head">
             <span class="card-title">Threat Intelligence Enrichment (Public IPs Only)</span>
-            <span id="intelMode" class="chip">SAMPLE PREVIEW</span>
+            <span id="intelMode" class="chip"></span>
           </div>
-          <div id="intelContent">
-            <table>
-              <thead>
-                <tr><th>IP Address</th><th>Risk Score</th><th>Network / Country</th><th>Classification</th><th>Origin</th></tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>45.155.205.233</td>
-                  <td><span class="chip chip-med">45/100</span></td>
-                  <td>Russia — Cloud Technologies LLC (Cloud.ru)</td>
-                  <td>HOSTING</td>
-                  <td>STATIC PREVIEW (Click Run for Live Feed)</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <div id="intelContent"></div>
         </div>
 
         <div class="card">
           <div class="card-head">
             <span class="card-title">AI Threat Assessment (<span id="modelName">gemini-3-flash-preview</span>)</span>
-            <span id="triageTags" class="chip">SAMPLE PREVIEW</span>
+            <span id="triageTags" class="chip"></span>
           </div>
 
           <div id="triageErrorBox" class="mono chip-high hidden"></div>
@@ -681,29 +677,25 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
             <div class="meta-row">
               <div>
                 <div class="field-label">MITRE ATT&amp;CK Tactic (Validated)</div>
-                <div id="mitreTactic" class="mono">TA0006 - Credential Access</div>
+                <div id="mitreTactic" class="mono"></div>
               </div>
               <div>
-                <div class="field-label">Assessment Confidence: <span id="confVal" style="color:var(--accent)">92%</span></div>
-                <div class="conf-track"><div id="confFill" class="conf-fill" style="width:92%"></div></div>
+                <div class="field-label">Assessment Confidence: <span id="confVal" style="color:var(--accent)">0%</span></div>
+                <div class="conf-track"><div id="confFill" class="conf-fill" style="width:0%"></div></div>
               </div>
             </div>
 
             <div class="field-label">Attack Classification</div>
-            <div id="attackType" class="mono">SSH Credential Brute Force against Clinical Gateway (T1110.001)</div>
+            <div id="attackType" class="mono"></div>
 
             <div class="field-label">Evidence &amp; Correlation Steps</div>
-            <div id="reasoningSteps" class="step-cards">
-              <div class="reason-card"><span class="reason-num">1</span><span>Tokenized 4 PIPEDA/PHI identifiers ([EMAIL_1], [HCN_1], [INTERNAL_IP_1], [INTERNAL_IP_2]) prior to external analysis.</span></div>
-              <div class="reason-card"><span class="reason-num">2</span><span>Correlated external source IP 45.155.205.233 with hosting infrastructure telemetry.</span></div>
-              <div class="reason-card"><span class="reason-num">3</span><span>Mapped failed SSH authentication targeting clinical gateway to MITRE TA0006 (Credential Access).</span></div>
-            </div>
+            <div id="reasoningSteps" class="step-cards"></div>
 
             <div class="field-label">Summary (Tokenized Response from Model)</div>
-            <div id="aiSummary" class="mono">External host 45.155.205.233 attempted an SSH password failure against user [EMAIL_1] (associated with record [HCN_1]) across internal endpoints [INTERNAL_IP_1] and [INTERNAL_IP_2].</div>
+            <div id="aiSummary" class="mono"></div>
 
             <div class="field-label">Recommended Containment (Tokenized)</div>
-            <div id="aiAction" class="mono">Block 45.155.205.233 at the perimeter firewall, verify account integrity for [EMAIL_1], and audit SSH exposure on [INTERNAL_IP_1] and [INTERNAL_IP_2].</div>
+            <div id="aiAction" class="mono"></div>
           </div>
         </div>
 
@@ -711,15 +703,15 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
           <div class="card-head">
             <span class="card-title">Local Analyst View (Re-hydrated On-Premise)</span>
             <div style="display:flex;gap:6px;align-items:center">
-              <span id="restoredModeChip" class="chip">SAMPLE PREVIEW</span>
+              <span id="restoredModeChip" class="chip chip-accent">Re-hydrated Locally</span>
               <button type="button" class="btn-preset" onclick="exportReportJSON()">Export JSON</button>
               <button type="button" class="btn-preset" onclick="window.print()">Print / PDF</button>
             </div>
           </div>
           <div class="field-label">Analyst Incident Summary</div>
-          <div id="localSummary" class="mono">External host 45.155.205.233 attempted an SSH password failure against user nurse.jane@hospital.ca (associated with record 9876543210) across internal endpoints 10.0.0.15 and 192.168.1.10.</div>
+          <div id="localSummary" class="mono"></div>
           <div class="field-label">Actionable Containment Checklist</div>
-          <div id="localAction" class="mono">Block 45.155.205.233 at the perimeter firewall, verify account integrity for nurse.jane@hospital.ca, and audit SSH exposure on 10.0.0.15 and 192.168.1.10.</div>
+          <div id="localAction" class="mono"></div>
         </div>
       </div>
     </div>
@@ -737,7 +729,7 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
         </div>
         <div class="arch-card">
           <h4>03. Guardrailed AI + Fallback</h4>
-          <p>Log-based prompt injections are quarantined locally. Structured triage runs on <code>gemini-2.5-flash</code> with MITRE tactic validation and an automatic deterministic SOC rule fallback if the LLM is unreachable.</p>
+          <p>Log-based prompt injections are quarantined locally. Structured triage runs on <code>gemini-3-flash-preview</code> with MITRE tactic validation and an automatic deterministic SOC rule fallback if the LLM is unreachable.</p>
         </div>
         <div class="arch-card">
           <h4>04. Single-Invocation Re-hydration</h4>
@@ -1054,6 +1046,8 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
         document.getElementById("localAction").textContent = data.local_detokenized_action;
       }
 
+      const idleCol = document.getElementById("idleCol");
+      if (idleCol) idleCol.classList.add("hidden");
       document.getElementById("rightCol").classList.remove("hidden");
       runBtn.disabled = false;
       runBtn.textContent = "Run Triage Analysis";

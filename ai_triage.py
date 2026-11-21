@@ -68,14 +68,12 @@ def normalize_mitre_tactic(raw_tactic: str, sanitized_log: str = "") -> str:
 
 
 class AITriageHelper:
-    """Sends scrubbed logs and live IP intel to Gemini Flash with automatic model failover and SOC rule fallback."""
+    """Sends scrubbed logs and live IP intel to Gemini 3 Flash Preview with automatic failover and SOC rule fallback."""
 
     GEMINI_MODEL = "gemini-3-flash-preview"
     GEMINI_MODEL_CANDIDATES = (
         "gemini-3-flash-preview",
-        "gemini-3.8-flash",
         "gemini-3.1-flash-lite-preview",
-        "gemini-2.5-flash",
     )
     REQUIRED_KEYS = ("severity", "attack_type", "summary", "recommended_action")
 

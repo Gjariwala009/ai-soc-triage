@@ -32,7 +32,7 @@ SOC analysts frequently paste raw syslog, Windows Sysmon, or EHR audit logs into
        ▼                                                          │
 ┌────────────────────────────────────────────────────────┐        │
 │ 03. AI Triage + Deterministic Fallback (ai_triage.py)  │        │
-│  • Calls gemini-2.5-flash with strict JSON schema      │        │
+│  • Calls gemini-3-flash-preview with strict JSON       │        │
 │  • Validates MITRE ATT&CK tactic against canonical IDs │        │
 │  • Automatic rule-based SOC fallback if LLM is offline │        │
 └──────┬─────────────────────────────────────────────────┘        │
@@ -59,7 +59,7 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user nurse
 Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]
 ```
 
-### Stage 03: Tokenized AI Assessment (`gemini-2.5-flash`)
+### Stage 03: Tokenized AI Assessment (`gemini-3-flash-preview`)
 - **Severity**: `HIGH` | **MITRE Tactic**: `TA0006 - Credential Access`
 - **Tokenized Summary**: `External host 45.155.205.233 attempted an SSH password failure against user [EMAIL_1] (associated with record [HCN_1]) across internal endpoints [INTERNAL_IP_1] and [INTERNAL_IP_2].`
 
