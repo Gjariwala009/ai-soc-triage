@@ -616,7 +616,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
             <label for="fileInput" class="file-label">Upload .log / .txt</label>
             <input id="fileInput" type="file" accept=".log,.txt,.json,.csv" onchange="handleFileUpload(event)" />
             <div class="controls-right">
-              <button id="resetBtn" type="button" class="btn-secondary" onclick="resetPipelineState()" title="Reset pipeline status without clearing your log input">Reset / Retry</button>
+              <button id="resetBtn" type="button" class="btn-secondary" onclick="resetPipelineState()" title="Clear all displayed data and reset pipeline state">Reset</button>
               <button id="runBtn" type="button" class="btn-primary" onclick="analyzeLog()">Run Triage Analysis</button>
             </div>
           </div>
@@ -774,12 +774,49 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
       const errorBox = document.getElementById("errorBox");
       const runBtn = document.getElementById("runBtn");
       errorBox.classList.add("hidden");
+      errorBox.textContent = "";
       runBtn.disabled = false;
       runBtn.textContent = "Run Triage Analysis";
+
       setTrace("step1Trace", "", "READY");
       setTrace("step2Trace", "", "READY");
       setTrace("step3Trace", "", "READY");
       setTrace("step4Trace", "", "READY");
+
+      lastAnalysisPayload = null;
+
+      document.getElementById("logInput").value = "";
+      document.getElementById("fileInput").value = "";
+      const fileTag = document.getElementById("fileNameTag");
+      fileTag.textContent = "";
+      fileTag.classList.add("hidden");
+      updateCharCount();
+
+      document.getElementById("scrubbedLog").textContent = "";
+      document.getElementById("promptSentBox").textContent = "";
+      document.getElementById("scrubTags").textContent = "";
+      const qBox = document.getElementById("quarantineBox");
+      qBox.textContent = "";
+      qBox.classList.add("hidden");
+      document.getElementById("scrubBox").classList.add("hidden");
+
+      document.getElementById("intelContent").innerHTML = "";
+      document.getElementById("intelMode").textContent = "";
+      document.getElementById("mitreTactic").textContent = "";
+      document.getElementById("confVal").textContent = "0%";
+      document.getElementById("confFill").style.width = "0%";
+      document.getElementById("attackType").textContent = "";
+      document.getElementById("reasoningSteps").innerHTML = "";
+      document.getElementById("aiSummary").textContent = "";
+      document.getElementById("aiAction").textContent = "";
+      document.getElementById("localSummary").textContent = "";
+      document.getElementById("localAction").textContent = "";
+      document.getElementById("triageErrorBox").textContent = "";
+      document.getElementById("triageErrorBox").classList.add("hidden");
+
+      document.getElementById("rightCol").classList.add("hidden");
+      const idleCol = document.getElementById("idleCol");
+      if (idleCol) idleCol.classList.remove("hidden");
     }
 
     async function checkHealth() {
