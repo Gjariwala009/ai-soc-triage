@@ -28,7 +28,7 @@ jobs:
 
       - name: Compile all Python modules (syntax & import verification)
         run: |
-          python3 -m py_compile privacy_scrubber.py threat_intel.py ai_triage.py dashboard.py api/index.py test_scrubber.py
+          python3 -m py_compile privacy_scrubber.py threat_intel.py ai_triage.py dashboard.py api/index.py api/health.py test_scrubber.py
 
       - name: Run unit test suite
         run: |

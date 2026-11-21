@@ -85,7 +85,7 @@ class ThreatIntelChecker:
             return None
 
     def check_ip(self, ip: str, api_key: Optional[str] = None) -> dict:
-        effective_key = (api_key or self.api_key or "").strip()
+        effective_key = (api_key or self.api_key or os.getenv("ABUSEIPDB_API_KEY") or "").strip()
         cache_key = (ip, bool(effective_key))
 
         if cache_key in self.checked_ips:
@@ -94,12 +94,16 @@ class ThreatIntelChecker:
             return cached
 
         result = self._query_ip_api(ip)
+        ip_api_score = result["abuse_score"]
         if effective_key:
             abuse_data = self._query_abuseipdb(ip, effective_key)
             if abuse_data is not None:
-                result["abuse_score"] = abuse_data.get("abuseConfidenceScore", result["abuse_score"])
+                abuse_conf = int(abuse_data.get("abuseConfidenceScore", 0))
+                result["abuseipdb_confidence_score"] = abuse_conf
+                result["ip_api_heuristic_score"] = ip_api_score
+                result["abuse_score"] = max(abuse_conf, ip_api_score)
                 result["isp"] = abuse_data.get("isp") or result["isp"]
-                result["total_reports"] = abuse_data.get("totalReports", 0)
+                result["total_reports"] = int(abuse_data.get("totalReports", 0))
                 result["source"] = "abuseipdb + ip-api (live)"
             else:
                 result["source"] = f"{result['source']} [abuseipdb failed]"

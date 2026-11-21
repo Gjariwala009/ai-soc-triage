@@ -90,7 +90,7 @@ class TestEnterpriseLogScrubber(unittest.TestCase):
 
         scrubber = EnterpriseLogScrubber()
         scrub_res = scrubber.sanitize_log(
-            "Failed password for nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 -> 10.0.0.15"
+            "Failed password for nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 -> 10.0.0.15 / 192.168.1.10"
         )
         helper = AITriageHelper(api_key="")
         report = helper._rule_based_fallback(
@@ -101,6 +101,11 @@ class TestEnterpriseLogScrubber(unittest.TestCase):
         self.assertEqual(report["severity"], "HIGH")
         self.assertIn(report["mitre_tactic"], VALID_MITRE_TACTICS.values())
         self.assertIn("[EMAIL_1]", report["summary"])
+        self.assertIn("[HCN_1]", report["summary"])
+        self.assertIn("[INTERNAL_IP_1]", report["summary"])
+        self.assertIn("[INTERNAL_IP_2]", report["summary"])
+        detok = scrubber.detokenize(report["summary"])
+        self.assertIn("192.168.1.10", detok)
 
 
 if __name__ == "__main__":

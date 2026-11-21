@@ -579,21 +579,21 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
     </header>
 
     <div class="trace-bar">
-      <div id="step1Trace" class="trace-step done">
+      <div id="step1Trace" class="trace-step">
         <div class="trace-left"><span class="step-dot"></span><span>01 PII/PHI Tokenization</span></div>
-        <span class="trace-status">DONE</span>
+        <span class="trace-status">READY</span>
       </div>
-      <div id="step2Trace" class="trace-step done">
+      <div id="step2Trace" class="trace-step">
         <div class="trace-left"><span class="step-dot"></span><span>02 Threat Intel Lookup</span></div>
-        <span class="trace-status">DONE</span>
+        <span class="trace-status">READY</span>
       </div>
-      <div id="step3Trace" class="trace-step done">
+      <div id="step3Trace" class="trace-step">
         <div class="trace-left"><span class="step-dot"></span><span>03 AI Threat Analysis</span></div>
-        <span class="trace-status">DONE</span>
+        <span class="trace-status">READY</span>
       </div>
-      <div id="step4Trace" class="trace-step done">
+      <div id="step4Trace" class="trace-step">
         <div class="trace-left"><span class="step-dot"></span><span>04 Local Re-hydration</span></div>
-        <span class="trace-status">DONE</span>
+        <span class="trace-status">READY</span>
       </div>
     </div>
 
@@ -632,7 +632,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
         <div id="scrubBox" class="card">
           <div class="card-head">
             <span class="card-title">Sanitized Log &amp; Outbound LLM Prompt</span>
-            <span id="scrubTags" class="chip chip-low">Tokens: 4 | Clean</span>
+            <span id="scrubTags" class="chip">SAMPLE PREVIEW (NOT YET RUN)</span>
           </div>
           <div class="field-label">Sanitized Telemetry (PII/PHI &amp; Private IPs Masked)</div>
           <div id="scrubbedLog" class="mono">Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]</div>
@@ -649,7 +649,7 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
         <div class="card">
           <div class="card-head">
             <span class="card-title">Threat Intelligence Enrichment (Public IPs Only)</span>
-            <span id="intelMode" class="chip chip-accent">Pre-loaded Sample</span>
+            <span id="intelMode" class="chip">SAMPLE PREVIEW</span>
           </div>
           <div id="intelContent">
             <table>
@@ -659,10 +659,10 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
               <tbody>
                 <tr>
                   <td>45.155.205.233</td>
-                  <td><span class="chip chip-high">85/100</span></td>
-                  <td>Russia — Hosting / Bulletproof ASN</td>
-                  <td>PROXY/TOR, HOSTING</td>
-                  <td>SAMPLE: ip-api + abuseipdb</td>
+                  <td><span class="chip chip-med">45/100</span></td>
+                  <td>Russia — Cloud Technologies LLC (Cloud.ru)</td>
+                  <td>HOSTING</td>
+                  <td>STATIC PREVIEW (Click Run for Live Feed)</td>
                 </tr>
               </tbody>
             </table>
@@ -671,8 +671,8 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
 
         <div class="card">
           <div class="card-head">
-            <span class="card-title">AI Threat Assessment (<span id="modelName">gemini-2.5-flash</span>)</span>
-            <span id="triageTags" class="chip chip-high">HIGH</span>
+            <span class="card-title">AI Threat Assessment (<span id="modelName">gemini-3-flash-preview</span>)</span>
+            <span id="triageTags" class="chip">SAMPLE PREVIEW</span>
           </div>
 
           <div id="triageErrorBox" class="mono chip-high hidden"></div>
@@ -695,7 +695,7 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
             <div class="field-label">Evidence &amp; Correlation Steps</div>
             <div id="reasoningSteps" class="step-cards">
               <div class="reason-card"><span class="reason-num">1</span><span>Tokenized 4 PIPEDA/PHI identifiers ([EMAIL_1], [HCN_1], [INTERNAL_IP_1], [INTERNAL_IP_2]) prior to external analysis.</span></div>
-              <div class="reason-card"><span class="reason-num">2</span><span>Correlated external source IP 45.155.205.233 with high-risk hosting/proxy telemetry (score 85/100).</span></div>
+              <div class="reason-card"><span class="reason-num">2</span><span>Correlated external source IP 45.155.205.233 with hosting infrastructure telemetry.</span></div>
               <div class="reason-card"><span class="reason-num">3</span><span>Mapped failed SSH authentication targeting clinical gateway to MITRE TA0006 (Credential Access).</span></div>
             </div>
 
@@ -711,7 +711,7 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
           <div class="card-head">
             <span class="card-title">Local Analyst View (Re-hydrated On-Premise)</span>
             <div style="display:flex;gap:6px;align-items:center">
-              <span class="chip chip-accent">Re-hydrated Locally</span>
+              <span id="restoredModeChip" class="chip">SAMPLE PREVIEW</span>
               <button type="button" class="btn-preset" onclick="exportReportJSON()">Export JSON</button>
               <button type="button" class="btn-preset" onclick="window.print()">Print / PDF</button>
             </div>
@@ -794,15 +794,16 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
       const dot = document.getElementById("healthDot");
       const txt = document.getElementById("healthText");
       try {
-        const resp = await fetch("/api/index?action=health");
+        const resp = await fetch("/api/health");
         if (!resp.ok) throw new Error("HTTP " + resp.status);
         const info = await resp.json();
+        const abuseTag = info.abuseipdb_configured ? " + AbuseIPDB" : "";
         if (info.gemini_configured) {
           dot.className = "pulse-dot ok";
-          txt.textContent = "Engine Ready (" + (info.model || "gemini-2.5-flash") + ")";
+          txt.textContent = "Engine Ready (" + (info.model || "gemini-3-flash-preview") + abuseTag + ")";
         } else {
           dot.className = "pulse-dot warn";
-          txt.textContent = "Engine Ready (Rule-Fallback Mode)";
+          txt.textContent = "Rule-Fallback Mode (Set GEMINI_API_KEY in Vercel" + abuseTag + ")";
         }
       } catch (e) {
         dot.className = "pulse-dot err";
@@ -979,6 +980,14 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
           scSpan.className = scoreCls;
           scSpan.textContent = info.abuse_score + "/100";
           tdScore.appendChild(scSpan);
+          if (typeof info.abuseipdb_confidence_score === "number") {
+            const sub = document.createElement("div");
+            sub.style.fontSize = "10.5px";
+            sub.style.color = "var(--muted)";
+            sub.style.marginTop = "3px";
+            sub.textContent = "AbuseIPDB: " + info.abuseipdb_confidence_score + "% (" + (info.total_reports || 0) + " rpts)";
+            tdScore.appendChild(sub);
+          }
 
           const tdNet = document.createElement("td");
           tdNet.textContent = (info.country || "?") + " — " + (info.isp || "?");
@@ -1020,7 +1029,13 @@ Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAI
         triageBody.classList.remove("hidden");
         restoredBox.classList.remove("hidden");
 
-        document.getElementById("modelName").textContent = triage.model || "gemini-2.5-flash";
+        const restoredChip = document.getElementById("restoredModeChip");
+        if (restoredChip) {
+          restoredChip.textContent = "Re-hydrated Locally";
+          restoredChip.className = "chip chip-accent";
+        }
+
+        document.getElementById("modelName").textContent = triage.model || "gemini-3-flash-preview";
         triageTags.textContent = triage.severity;
         triageTags.className = sevClass(triage.severity);
 
@@ -1075,11 +1090,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
         query = urllib.parse.parse_qs(parsed_url.query)
 
         if route in ("/api/health", "/health") or query.get("action") == ["health"]:
+            load_dotenv_file()
             self._send_json(
                 200,
                 {
                     "status": "ok",
                     "model": AITriageHelper.GEMINI_MODEL,
+                    "model_candidates": list(AITriageHelper.GEMINI_MODEL_CANDIDATES),
                     "gemini_configured": bool(os.getenv("GEMINI_API_KEY")),
                     "abuseipdb_configured": bool(os.getenv("ABUSEIPDB_API_KEY")),
                     "fallback_ready": True,

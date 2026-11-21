@@ -68,9 +68,15 @@ def normalize_mitre_tactic(raw_tactic: str, sanitized_log: str = "") -> str:
 
 
 class AITriageHelper:
-    """Sends scrubbed logs and live IP intel to Gemini 2.5 Flash with deterministic rule-based SOC fallback."""
+    """Sends scrubbed logs and live IP intel to Gemini Flash with automatic model failover and SOC rule fallback."""
 
-    GEMINI_MODEL = "gemini-2.5-flash"
+    GEMINI_MODEL = "gemini-3-flash-preview"
+    GEMINI_MODEL_CANDIDATES = (
+        "gemini-3-flash-preview",
+        "gemini-3.8-flash",
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash",
+    )
     REQUIRED_KEYS = ("severity", "attack_type", "summary", "recommended_action")
 
     def __init__(self, api_key: Optional[str] = None) -> None:
@@ -121,7 +127,7 @@ class AITriageHelper:
 
         tokens = re.findall(r"\[(?:EMAIL|HCN|INTERNAL_IP)_\d+\]", sanitized_log)
         unique_tokens = list(dict.fromkeys(tokens))
-        token_ref = ", ".join(unique_tokens[:3]) if unique_tokens else "affected host/account"
+        token_ref = ", ".join(unique_tokens) if unique_tokens else "affected host/account"
 
         max_abuse = 0
         primary_ip = ""
@@ -205,10 +211,10 @@ class AITriageHelper:
             "fallback_reason": fallback_reason,
         }
 
-    def _ask_gemini(self, prompt: str, api_key: str, sanitized_log: str) -> dict:
+    def _ask_single_model(self, model_id: str, prompt: str, api_key: str, sanitized_log: str) -> dict:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"{self.GEMINI_MODEL}:generateContent"
+            f"{model_id}:generateContent"
         )
         payload = {
             "contents": [{"parts": [{"text": prompt}]}],
@@ -225,7 +231,7 @@ class AITriageHelper:
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=25) as response:
+            with urllib.request.urlopen(request, timeout=20) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as http_err:
             detail = ""
@@ -235,19 +241,19 @@ class AITriageHelper:
             except Exception:
                 detail = http_err.reason
             return {
-                "error": f"Gemini API HTTP {http_err.code}: {detail or 'Request rejected. Check your GEMINI_API_KEY.'}"
+                "error": f"Gemini API ({model_id}) HTTP {http_err.code}: {detail or 'Request rejected.'}"
             }
         except Exception as exc:
-            return {"error": f"Gemini API request failed: {type(exc).__name__}: {exc}"}
+            return {"error": f"Gemini API ({model_id}) request failed: {type(exc).__name__}: {exc}"}
 
         try:
             raw_text = data["candidates"][0]["content"]["parts"][0]["text"]
             parsed = json.loads(raw_text)
         except Exception as exc:
-            return {"error": f"Failed to parse Gemini JSON response: {exc}"}
+            return {"error": f"Failed to parse Gemini ({model_id}) JSON response: {exc}"}
 
         if not isinstance(parsed, dict) or not all(k in parsed for k in self.REQUIRED_KEYS):
-            return {"error": "Gemini response was missing required JSON triage fields."}
+            return {"error": f"Gemini ({model_id}) response was missing required JSON triage fields."}
 
         sev = str(parsed.get("severity", "MEDIUM")).upper()
         parsed["severity"] = sev if sev in ("LOW", "MEDIUM", "HIGH", "CRITICAL") else "MEDIUM"
@@ -266,9 +272,25 @@ class AITriageHelper:
                 "Classified incident severity and generated containment guidance.",
             ]
 
-        parsed["model"] = self.GEMINI_MODEL
+        # Ensure all tokenized entities in the log are referenced in summary or action so local re-hydration restores every token
+        all_tokens = list(dict.fromkeys(re.findall(r"\[(?:EMAIL|HCN|INTERNAL_IP)_\d+\]", sanitized_log)))
+        combined_text = f"{parsed.get('summary', '')} {parsed.get('recommended_action', '')}"
+        missing_tokens = [tok for tok in all_tokens if tok not in combined_text]
+        if missing_tokens:
+            parsed["summary"] = f"{parsed['summary'].rstrip('.')} (impacted tokens: {', '.join(missing_tokens)})."
+
+        parsed["model"] = model_id
         parsed["mode"] = "gemini_live"
         return parsed
+
+    def _ask_gemini(self, prompt: str, api_key: str, sanitized_log: str) -> dict:
+        last_error = "No Gemini models attempted."
+        for model_id in self.GEMINI_MODEL_CANDIDATES:
+            result = self._ask_single_model(model_id, prompt, api_key, sanitized_log)
+            if "error" not in result:
+                return result
+            last_error = result["error"]
+        return {"error": last_error}
 
     def analyze_alert(
         self,
