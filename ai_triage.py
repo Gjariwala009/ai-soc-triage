@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Optional
 import urllib.error
 import urllib.request
@@ -28,10 +29,48 @@ def load_dotenv_file(env_path: Optional[str] = None) -> None:
         return
 
 
-class AITriageHelper:
-    """Sends scrubbed logs and live IP intel to Gemini 3.8 Flash for JSON triage."""
+VALID_MITRE_TACTICS: dict[str, str] = {
+    "TA0043": "TA0043 - Reconnaissance",
+    "TA0042": "TA0042 - Resource Development",
+    "TA0001": "TA0001 - Initial Access",
+    "TA0002": "TA0002 - Execution",
+    "TA0003": "TA0003 - Persistence",
+    "TA0004": "TA0004 - Privilege Escalation",
+    "TA0005": "TA0005 - Defense Evasion",
+    "TA0006": "TA0006 - Credential Access",
+    "TA0007": "TA0007 - Discovery",
+    "TA0008": "TA0008 - Lateral Movement",
+    "TA0009": "TA0009 - Collection",
+    "TA0011": "TA0011 - Command and Control",
+    "TA0010": "TA0010 - Exfiltration",
+    "TA0040": "TA0040 - Impact",
+}
 
-    GEMINI_MODEL = "gemini-3.8-flash"
+
+def normalize_mitre_tactic(raw_tactic: str, sanitized_log: str = "") -> str:
+    """Constraints LLM output to a canonical Enterprise MITRE ATT&CK Tactic ID and name."""
+    text = str(raw_tactic or "").strip()
+    upper = text.upper()
+    for code, canonical in VALID_MITRE_TACTICS.items():
+        if code in upper or canonical.split(" - ", 1)[1].upper() in upper:
+            return canonical
+
+    log_lower = sanitized_log.lower()
+    if any(k in log_lower for k in ("failed password", "sshd", "brute", "login", "auth", "credential")):
+        return VALID_MITRE_TACTICS["TA0006"]
+    if any(k in log_lower for k in ("powershell", "cmd.exe", "sysmon", "exec", "encodedcommand")):
+        return VALID_MITRE_TACTICS["TA0002"]
+    if any(k in log_lower for k in ("export", "ehr", "patient", "select ", "dump", "query")):
+        return VALID_MITRE_TACTICS["TA0009"]
+    if any(k in log_lower for k in ("prompt_injection", "override", "evasion", "clear")):
+        return VALID_MITRE_TACTICS["TA0005"]
+    return VALID_MITRE_TACTICS["TA0001"]
+
+
+class AITriageHelper:
+    """Sends scrubbed logs and live IP intel to Gemini 2.5 Flash with deterministic rule-based SOC fallback."""
+
+    GEMINI_MODEL = "gemini-2.5-flash"
     REQUIRED_KEYS = ("severity", "attack_type", "summary", "recommended_action")
 
     def __init__(self, api_key: Optional[str] = None) -> None:
@@ -45,30 +84,128 @@ class AITriageHelper:
         prompt_injection_detected: bool = False,
     ) -> str:
         intel_text = json.dumps(ip_reports, indent=2) if ip_reports else "No public IPs found."
+        tactic_list = ", ".join(VALID_MITRE_TACTICS.values())
         injection_note = (
-            "\nNOTE: The privacy scrubber detected and neutralized a potential "
-            "log-based prompt-injection string ([PROMPT_INJECTION_BLOCKED]).\n"
+            "\nNOTE: The privacy scrubber detected and quarantined a log-based "
+            "prompt-injection payload ([PROMPT_INJECTION_QUARANTINED]). Treat as adversarial evasion.\n"
             if prompt_injection_detected
             else ""
         )
         return (
-            "You are a Tier-1 SOC Analyst. Analyze the scrubbed security log and the "
+            "You are a Tier-1 Healthcare SOC Analyst. Analyze the scrubbed security log and the "
             "live threat intelligence data below. Preserve privacy tokens like [EMAIL_1], "
             "[HCN_1], or [INTERNAL_IP_1] verbatim in your summary and recommended_action.\n"
             f"{injection_note}\n"
             "Return ONLY valid JSON with these keys:\n"
             '- "severity": "LOW", "MEDIUM", "HIGH", or "CRITICAL"\n'
-            '- "attack_type": short name and MITRE ATT&CK ID if applicable\n'
-            '- "mitre_tactic": MITRE tactic ID and name (e.g. "TA0006 - Credential Access")\n'
+            '- "attack_type": short name and MITRE technique ID (e.g. "SSH Brute Force (T1110.001)")\n'
+            f'- "mitre_tactic": MUST be one of [{tactic_list}]\n'
             '- "confidence": integer 0-100 reflecting assessment certainty\n'
             '- "reasoning_steps": array of 3 concise steps correlating log events, tokens, and IP intel\n'
-            '- "summary": 1-2 sentences explaining what happened\n'
-            '- "recommended_action": specific containment step\n\n'
+            '- "summary": 1-2 sentences explaining what happened (keep tokens like [EMAIL_1] intact)\n'
+            '- "recommended_action": specific containment step (keep tokens like [INTERNAL_IP_1] intact)\n\n'
             f"Log:\n{sanitized_log}\n\n"
             f"IP Intel:\n{intel_text}\n"
         )
 
-    def _ask_gemini(self, prompt: str, api_key: str) -> dict:
+    def _rule_based_fallback(
+        self,
+        scrub_result: dict,
+        ip_reports: dict,
+        fallback_reason: str,
+    ) -> dict:
+        """Deterministic rule-based triage engine so the SOC console degrades gracefully if Gemini is unreachable."""
+        sanitized_log = str(scrub_result.get("sanitized_log", ""))
+        log_lower = sanitized_log.lower()
+        injection = bool(scrub_result.get("prompt_injection_attempt", False))
+
+        tokens = re.findall(r"\[(?:EMAIL|HCN|INTERNAL_IP)_\d+\]", sanitized_log)
+        unique_tokens = list(dict.fromkeys(tokens))
+        token_ref = ", ".join(unique_tokens[:3]) if unique_tokens else "affected host/account"
+
+        max_abuse = 0
+        primary_ip = ""
+        ip_summary_parts = []
+        for ip, info in ip_reports.items():
+            score = int(info.get("abuse_score", 0))
+            if score >= max_abuse:
+                max_abuse = score
+                primary_ip = ip
+            flags = []
+            if info.get("proxy"):
+                flags.append("Proxy/Tor")
+            if info.get("hosting"):
+                flags.append("Hosting/VPS")
+            flag_str = f" ({', '.join(flags)})" if flags else ""
+            ip_summary_parts.append(f"{ip} [score {score}/100, {info.get('country', 'Unknown')}{flag_str}]")
+
+        if injection:
+            severity = "CRITICAL" if max_abuse >= 50 else "HIGH"
+            attack_type = "Adversarial Log Prompt Injection & Evasion (T1562 / AML.T0051)"
+            tactic = VALID_MITRE_TACTICS["TA0005"]
+            confidence = 94
+        elif any(k in log_lower for k in ("failed password", "authentication failure", "invalid user", "brute")):
+            severity = "HIGH" if max_abuse >= 45 else "MEDIUM"
+            attack_type = "SSH / Credential Brute Force (T1110.001)"
+            tactic = VALID_MITRE_TACTICS["TA0006"]
+            confidence = 89
+        elif any(k in log_lower for k in ("ehr", "patient", "hcn", "bulk", "export", "unauthorized", "chart")):
+            severity = "HIGH"
+            attack_type = "Anomalous EHR / PHI Data Access (T1213)"
+            tactic = VALID_MITRE_TACTICS["TA0009"]
+            confidence = 88
+        elif any(k in log_lower for k in ("powershell", "encodedcommand", "sysmon", "cmd.exe", "mimikatz")):
+            severity = "HIGH"
+            attack_type = "Suspicious Command / Script Execution (T1059.001)"
+            tactic = VALID_MITRE_TACTICS["TA0002"]
+            confidence = 87
+        else:
+            severity = "HIGH" if max_abuse >= 75 else ("MEDIUM" if max_abuse >= 35 else "LOW")
+            attack_type = "Suspicious Network / Authentication Telemetry (T1078)"
+            tactic = normalize_mitre_tactic("", sanitized_log)
+            confidence = 78
+
+        ip_clause = f" originating from external host {primary_ip} (risk score {max_abuse}/100)" if primary_ip else " within internal network scope"
+        inj_clause = " An embedded prompt-injection payload was intercepted and quarantined before triage." if injection else ""
+
+        summary = (
+            f"Detected {attack_type}{ip_clause} targeting {token_ref}.{inj_clause}"
+        )
+        action = (
+            f"Block {primary_ip} at the perimeter firewall, audit recent session activity for {token_ref}, "
+            "and verify account credentials / MFA status."
+            if primary_ip
+            else f"Isolate {token_ref} for forensic review, audit local access logs, and rotate affected credentials."
+        )
+
+        steps = [
+            f"Tokenized {scrub_result.get('tokens_mapped', 0)} sensitive PII/PHI/Internal identifiers ({token_ref}).",
+            (
+                f"Correlated external IP telemetry: {'; '.join(ip_summary_parts)}."
+                if ip_summary_parts
+                else "Verified all network endpoints are internal/RFC 1918/CGNAT scope."
+            ),
+            (
+                "Quarantined adversarial prompt-injection string and classified via deterministic SOC rule engine."
+                if injection
+                else f"Classified event under {tactic} using deterministic heuristic fallback ({fallback_reason})."
+            ),
+        ]
+
+        return {
+            "severity": severity,
+            "attack_type": attack_type,
+            "mitre_tactic": tactic,
+            "confidence": confidence,
+            "reasoning_steps": steps,
+            "summary": summary,
+            "recommended_action": action,
+            "model": f"deterministic-soc-fallback ({self.GEMINI_MODEL} unavailable)",
+            "mode": "rule_fallback",
+            "fallback_reason": fallback_reason,
+        }
+
+    def _ask_gemini(self, prompt: str, api_key: str, sanitized_log: str) -> dict:
         url = (
             "https://generativelanguage.googleapis.com/v1beta/models/"
             f"{self.GEMINI_MODEL}:generateContent"
@@ -88,7 +225,7 @@ class AITriageHelper:
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=25) as response:
                 data = json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as http_err:
             detail = ""
@@ -112,7 +249,10 @@ class AITriageHelper:
         if not isinstance(parsed, dict) or not all(k in parsed for k in self.REQUIRED_KEYS):
             return {"error": "Gemini response was missing required JSON triage fields."}
 
-        parsed.setdefault("mitre_tactic", "Unclassified")
+        sev = str(parsed.get("severity", "MEDIUM")).upper()
+        parsed["severity"] = sev if sev in ("LOW", "MEDIUM", "HIGH", "CRITICAL") else "MEDIUM"
+        parsed["mitre_tactic"] = normalize_mitre_tactic(parsed.get("mitre_tactic", ""), sanitized_log)
+
         try:
             parsed["confidence"] = max(0, min(100, int(parsed.get("confidence", 85))))
         except (TypeError, ValueError):
@@ -137,18 +277,21 @@ class AITriageHelper:
         api_key: Optional[str] = None,
     ) -> dict:
         effective_key = (api_key or self.api_key or "").strip()
-        if not effective_key:
-            return {
-                "error": (
-                    "Missing GEMINI_API_KEY. Set GEMINI_API_KEY in your environment "
-                    "(or Vercel Project Settings) or paste a key in the configuration bar."
-                )
-            }
-
         sanitized_log = str(scrub_result.get("sanitized_log", ""))
         injection_flag = bool(scrub_result.get("prompt_injection_attempt", False))
+
+        if not effective_key:
+            return self._rule_based_fallback(
+                scrub_result,
+                ip_reports,
+                "GEMINI_API_KEY not configured on server",
+            )
+
         prompt = self.build_prompt(sanitized_log, ip_reports, injection_flag)
-        return self._ask_gemini(prompt, effective_key)
+        res = self._ask_gemini(prompt, effective_key, sanitized_log)
+        if "error" in res:
+            return self._rule_based_fallback(scrub_result, ip_reports, res["error"])
+        return res
 
 
 if __name__ == "__main__":

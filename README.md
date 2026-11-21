@@ -1,38 +1,96 @@
-# AegisTriage
+# AegisTriage — Privacy-Preserving Healthcare SOC Log Sanitization & Triage Console
 
-Privacy-Preserving Log Sanitization & Threat Intelligence Console built in Python. Scrubs sensitive identifiers out of syslog, Windows Sysmon, and healthcare audit logs before enriching public IPs and running live alert triage with Gemini 3.8 Flash.
+SOC analysts frequently paste raw syslog, Windows Sysmon, or EHR audit logs into external LLMs during incident triage—inadvertently leaking patient Health Card Numbers (HCNs), clinician emails, and internal hospital subnet layouts under PIPEDA/PHIPA.
 
-## How it works
+**AegisTriage** is a dependency-free Python SOC triage console that tokenizes sensitive PII/PHI and internal network topology on-premise before dispatching telemetry to an LLM, enriches only routable public IPs against live threat intelligence, quarantines log-based prompt injections, and re-hydrates the final analyst report locally within a single stateless request lifecycle.
 
-1. **PIPEDA Sanitization (`privacy_scrubber.py`):** Replaces emails, 10-digit Health Card Numbers (HCNs), and private RFC 1918 IPv4 addresses with session-scoped tokens (`[EMAIL_1]`, `[HCN_1]`, `[INTERNAL_IP_1]`) and strips common log-based prompt-injection patterns. Public IPv4 addresses stay intact for threat-intel lookups.
-2. **Live IP Enrichment (`threat_intel.py`):** Queries `ip-api.com` in real time for Country, ISP, ASN, and Proxy/Tor/Hosting flags on any extracted public IPs—and optionally queries AbuseIPDB if `ABUSEIPDB_API_KEY` is configured—with in-memory caching to avoid duplicate API requests.
-3. **Live AI Triage (`ai_triage.py`):** Sends only the scrubbed log and live IP intel JSON to `gemini-3.8-flash` with JSON output enforced (`severity`, `attack_type`, `mitre_tactic`, `confidence`, `reasoning_steps`, `summary`, `recommended_action`).
-4. **Local Analyst Workbench (`dashboard.py` & `api/index.py`):** Dependency-free web UI (served locally or via Vercel Python serverless) that displays the exact Zero-PII prompt sent to Gemini alongside the locally detokenized analyst report.
+---
+
+## Architecture & 4-Stage Pipeline
+
+```text
+[Raw Security / EHR Audit Log]
+       │
+       ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 01. Ephemeral Tokenization & Injection Quarantine (privacy_scrubber.py) │
+│  • Masks emails -> [EMAIL_1]                                            │
+│  • Masks contextual/Luhn 10-digit HCNs (+ Ontario version codes) ->     │
+│    [HCN_1] (avoids bare epoch timestamp false positives)                │
+│  • Masks RFC 1918, Loopback, Link-Local, CGNAT (100.64/10), IPv6 ULA -> │
+│    [INTERNAL_IP_1]                                                      │
+│  • Quarantines adversarial prompt-injection payloads locally            │
+└──────┬──────────────────────────────────────────────────────────┬───────┘
+       │ Sanitized Log + Public IPs Only                          │ Ephemeral In-Memory
+       ▼                                                          │ Token Vault
+┌────────────────────────────────────────────────────────┐        │ (Single Invocation)
+│ 02. Public IP Threat Intel Enrichment (threat_intel.py)│        │
+│  • Queries ip-api.com (Country, ASN, ISP, Proxy/Tor)   │        │
+│  • Optional AbuseIPDB confidence score & total reports │        │
+└──────┬─────────────────────────────────────────────────┘        │
+       │ Sanitized Log + Public IP Intel JSON                     │
+       ▼                                                          │
+┌────────────────────────────────────────────────────────┐        │
+│ 03. AI Triage + Deterministic Fallback (ai_triage.py)  │        │
+│  • Calls gemini-2.5-flash with strict JSON schema      │        │
+│  • Validates MITRE ATT&CK tactic against canonical IDs │        │
+│  • Automatic rule-based SOC fallback if LLM is offline │        │
+└──────┬─────────────────────────────────────────────────┘        │
+       │ Tokenized Triage Report ([EMAIL_1], [HCN_1], ...)        │
+       ▼                                                          ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│ 04. Single-Invocation Re-hydration & Vault Wipe (dashboard.py)          │
+│  • Restores tokens locally for the SOC analyst's containment checklist  │
+│  • Explicitly clears the in-memory token vault before returning JSON    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Sample Input & Output
+
+### Raw Input Log
+```text
+Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user nurse.jane@hospital.ca (HCN: 9876543210) from 45.155.205.233 port 54321 ssh2 -> internal 10.0.0.15 / 192.168.1.10
+```
+
+### Stage 01: Sanitized Telemetry Sent to LLM
+```text
+Nov 20 09:14:22 nsha-ehr-gw01 sshd[4821]: Failed password for invalid user [EMAIL_1] (HCN: [HCN_1]) from 45.155.205.233 port 54321 ssh2 -> internal [INTERNAL_IP_1] / [INTERNAL_IP_2]
+```
+
+### Stage 03: Tokenized AI Assessment (`gemini-2.5-flash`)
+- **Severity**: `HIGH` | **MITRE Tactic**: `TA0006 - Credential Access`
+- **Tokenized Summary**: `External host 45.155.205.233 attempted an SSH password failure against user [EMAIL_1] (associated with record [HCN_1]) across internal endpoints [INTERNAL_IP_1] and [INTERNAL_IP_2].`
+
+### Stage 04: Re-hydrated Local Analyst View
+- **Analyst Incident Summary**: `External host 45.155.205.233 attempted an SSH password failure against user nurse.jane@hospital.ca (associated with record 9876543210) across internal endpoints 10.0.0.15 and 192.168.1.10.`
+
+---
 
 ## Run Locally
 
-1. Set your Gemini API key (and optional AbuseIPDB key) via environment variables or a local `.env` file:
-   ```bash
-   export GEMINI_API_KEY="your_gemini_api_key"
-   export ABUSEIPDB_API_KEY="your_abuseipdb_key"   # optional
-   python3 dashboard.py
-   ```
-2. Open `http://127.0.0.1:8080`, paste any real log line or upload a `.log`/`.txt` file, and click **Run AI Assessment**. (If you don't set `GEMINI_API_KEY` on the server, you can also enter it directly in the browser config bar.)
+No third-party pip packages are required (built entirely on Python's standard library).
 
-## Deploy to GitHub & Vercel
+```bash
+export GEMINI_API_KEY="your_gemini_api_key"
+export ABUSEIPDB_API_KEY="your_abuseipdb_key"   # optional
+python3 dashboard.py
+```
 
-1. Push the `ai-soc-triage` folder as a Git repository to GitHub:
-   ```bash
-   cd ai-soc-triage
-   git init
-   git add .
-   git commit -m "Initial commit: ehr-log-triage"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/ehr-log-triage.git
-   git push -u origin main
-   ```
-2. In **Vercel**, click **Add New Project** and import the `ehr-log-triage` repository.
-3. Under **Environment Variables**, add:
-   - `GEMINI_API_KEY` = your Google AI Studio Gemini key
-   - `ABUSEIPDB_API_KEY` = your AbuseIPDB key *(optional)*
-4. Click **Deploy**. Vercel routes all requests through `vercel.json` to `api/index.py` using Python's standard library.
+Open `http://127.0.0.1:8080`. Note: If `GEMINI_API_KEY` is omitted or unreachable, the console automatically degrades to its deterministic SOC rule-based triage engine so the pipeline never freezes.
+
+### Run Unit Tests
+
+```bash
+python3 -m unittest discover -v
+```
+
+---
+
+## Security Design & Honest Limitations
+
+- **Ephemeral Deterministic Session Tokens**: Within a single request invocation, identical identifiers map to the same token (e.g., `[EMAIL_1]`) so the LLM can correlate multi-line events without seeing raw values. Because the bidirectional mapping exists in memory during request execution, it is an **ephemeral per-request pseudonymization store**, not cryptographic zero-knowledge proof. The vault is never logged to disk and is explicitly cleared (`token_vault.clear()`) before the HTTP response finishes.
+- **Stateless Single-Invocation Re-hydration**: To avoid serverless cold-start state loss on Vercel, scrubbing, IP enrichment, LLM triage, and local detokenization all execute in a single atomic POST request (`/api/index`).
+- **Heuristic Regex vs. Unstructured Free-Text PHI**: `privacy_scrubber.py` uses context-aware patterns, Luhn checksum validation, and Ontario 2-letter version code matching for HCNs, plus `ipaddress` network validation for RFC 1918, loopback, link-local, CGNAT (`100.64.0.0/10`), and IPv6 ULA. However, regex scrubbing cannot guarantee detection of arbitrary free-text clinical notes or unformatted patient names. **Do not use this demo deployment with live production PHI.**
+- **Demo Guardrails**: Includes a sliding-window rate limiter (15 requests/minute per client IP) and a 12,000-character payload cap to protect AbuseIPDB and Gemini quotas.
